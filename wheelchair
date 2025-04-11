@@ -1,0 +1,197 @@
+-- Variabili globali
+local TeleportEnabled = false
+local SpeedEnabled = false
+local Teleporting = false
+local DesiredSpeed = 16
+
+-- Player
+local player = game.Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+
+-- GUI base
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "UltraModernUI"
+gui.ResetOnSpawn = false
+
+-- Contenitore principale
+local mainFrame = Instance.new("Frame", gui)
+mainFrame.Size = UDim2.new(0, 320, 0, 320)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -160)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BackgroundTransparency = 0.25
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Active = true
+mainFrame.Draggable = true
+
+-- UI Cornice & Gradient
+Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 12)
+local gradient = Instance.new("UIGradient", mainFrame)
+gradient.Color = ColorSequence.new{
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(30,30,30)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(10,10,10))
+}
+gradient.Rotation = 45
+
+-- Shadow
+local shadow = Instance.new("ImageLabel", mainFrame)
+shadow.BackgroundTransparency = 1
+shadow.Image = "rbxassetid://1316045217"
+shadow.ScaleType = Enum.ScaleType.Slice
+shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+shadow.Size = UDim2.new(1, 30, 1, 30)
+shadow.Position = UDim2.new(0, -15, 0, -15)
+shadow.ImageTransparency = 0.7
+shadow.ZIndex = 0
+
+-- Fade-in Animation
+mainFrame.BackgroundTransparency = 1
+mainFrame.Position = mainFrame.Position + UDim2.new(0, 0, 0, 30)
+mainFrame:TweenPosition(UDim2.new(0.5, -160, 0.5, -160), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.5, false)
+for i = 1, 10 do
+	mainFrame.BackgroundTransparency = 1 - (i / 10) * 0.75
+	task.wait(0.01)
+end
+
+-- Titolo
+local title = Instance.new("TextLabel", mainFrame)
+title.Size = UDim2.new(1, -60, 0, 40)
+title.Position = UDim2.new(0, 20, 0, 10)
+title.Text = "⚡ Glockieeh Menu"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 22
+title.BackgroundTransparency = 1
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+-- X Button
+local closeBtn = Instance.new("TextButton", mainFrame)
+closeBtn.Size = UDim2.new(0, 30, 0, 30)
+closeBtn.Position = UDim2.new(1, -40, 0, 10)
+closeBtn.Text = "✕"
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+closeBtn.Font = Enum.Font.GothamBold
+closeBtn.TextSize = 20
+Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 8)
+
+-- Credito
+local credit = Instance.new("TextLabel", mainFrame)
+credit.Size = UDim2.new(1, -20, 0, 20)
+credit.Position = UDim2.new(0, 10, 1, -30)
+credit.Text = "By glockieeh"
+credit.TextColor3 = Color3.fromRGB(180, 180, 180)
+credit.BackgroundTransparency = 1
+credit.Font = Enum.Font.Gotham
+credit.TextSize = 14
+credit.TextXAlignment = Enum.TextXAlignment.Right
+
+-- Teleport Toggle
+local teleportBtn = Instance.new("TextButton", mainFrame)
+teleportBtn.Size = UDim2.new(1, -40, 0, 40)
+teleportBtn.Position = UDim2.new(0, 20, 0, 60)
+teleportBtn.Text = "🌀 Teleport: OFF"
+teleportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+teleportBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+teleportBtn.Font = Enum.Font.GothamSemibold
+teleportBtn.TextSize = 18
+Instance.new("UICorner", teleportBtn).CornerRadius = UDim.new(0, 10)
+
+-- Speed Input
+local speedInput = Instance.new("TextBox", mainFrame)
+speedInput.Size = UDim2.new(1, -40, 0, 30)
+speedInput.Position = UDim2.new(0, 20, 0, 120)
+speedInput.Text = tostring(DesiredSpeed)
+speedInput.PlaceholderText = "Velocità del player"
+speedInput.TextColor3 = Color3.fromRGB(0, 0, 0)
+speedInput.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+speedInput.Font = Enum.Font.Gotham
+speedInput.TextSize = 16
+Instance.new("UICorner", speedInput).CornerRadius = UDim.new(0, 8)
+
+-- Speed Toggle
+local speedBtn = Instance.new("TextButton", mainFrame)
+speedBtn.Size = UDim2.new(1, -40, 0, 40)
+speedBtn.Position = UDim2.new(0, 20, 0, 170)
+speedBtn.Text = "⚡ Speed: OFF"
+speedBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+speedBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+speedBtn.Font = Enum.Font.GothamSemibold
+speedBtn.TextSize = 18
+Instance.new("UICorner", speedBtn).CornerRadius = UDim.new(0, 10)
+
+-- Funzione Teletrasporto
+local function teleportToOrbs()
+	if Teleporting then return end
+	Teleporting = true
+	local root = character:WaitForChild("HumanoidRootPart")
+
+	while TeleportEnabled do
+		local spawnFolder = workspace:FindFirstChild("Game")
+			and workspace.Game:FindFirstChild("Orbs")
+			and workspace.Game.Orbs:FindFirstChild("Spawn")
+
+		if spawnFolder then
+			for _, part in ipairs(spawnFolder:GetChildren()) do
+				if part:IsA("Part") and TeleportEnabled then
+					root.CFrame = part.CFrame
+					task.wait()
+				end
+			end
+		end
+
+		task.wait(0.4)
+	end
+	Teleporting = false
+end
+
+-- Funzione Speed
+local function applySpeed()
+	while SpeedEnabled do
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.WalkSpeed = DesiredSpeed
+		end
+		task.wait(0.2)
+	end
+end
+
+-- Pulsanti
+teleportBtn.MouseButton1Click:Connect(function()
+	TeleportEnabled = not TeleportEnabled
+	teleportBtn.Text = "🌀 Teleport: " .. (TeleportEnabled and "ON" or "OFF")
+	if TeleportEnabled then
+		teleportToOrbs()
+	end
+end)
+
+speedBtn.MouseButton1Click:Connect(function()
+	SpeedEnabled = not SpeedEnabled
+	speedBtn.Text = "⚡ Speed: " .. (SpeedEnabled and "ON" or "OFF")
+	if SpeedEnabled then
+		applySpeed()
+	else
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum then hum.WalkSpeed = 16 end
+	end
+end)
+
+speedInput.FocusLost:Connect(function()
+	local val = tonumber(speedInput.Text)
+	if val then
+		DesiredSpeed = val
+	else
+		speedInput.Text = tostring(DesiredSpeed)
+	end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	TeleportEnabled = false
+	SpeedEnabled = false
+	mainFrame:TweenPosition(mainFrame.Position + UDim2.new(0, 0, 0, 30), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.4, false)
+	for i = 1, 10 do
+		mainFrame.BackgroundTransparency = 0.25 + (i / 10) * 0.75
+		task.wait(0.01)
+	end
+	gui:Destroy()
+end)
