@@ -1,0 +1,1315 @@
+-- Variabili globali
+local TeleportEnabled = false
+local SpeedEnabled = false
+local JumpEnabled = false
+local ESPEnabled = false
+local NoClipEnabled = false
+local Teleporting = false
+local DesiredSpeed = 16
+local DesiredJump = 50
+local KeyVerified = false
+local CorrectKey = "massimobossetti"
+
+-- Colori e tema
+local Theme = {
+    Primary = Color3.fromRGB(32, 33, 36),       -- Sfondo scuro
+    Secondary = Color3.fromRGB(60, 64, 67),     -- Componenti secondari
+    Accent = Color3.fromRGB(138, 180, 248),     -- Colore di accento principale (blu)
+    Accent2 = Color3.fromRGB(249, 171, 0),      -- Colore di accento secondario (arancione)
+    Accent3 = Color3.fromRGB(52, 168, 83),      -- Verde per stato "attivo"
+    TextPrimary = Color3.fromRGB(255, 255, 255),-- Testo primario
+    TextSecondary = Color3.fromRGB(154, 160, 166), -- Testo secondario
+    Danger = Color3.fromRGB(234, 67, 53)        -- Colore per pericolo/errore
+}
+
+-- Player
+local player = game:GetService("Players").LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    -- Ripristina le impostazioni quando il character cambia
+    if SpeedEnabled then
+        local humanoid = character:WaitForChild("Humanoid")
+        humanoid.WalkSpeed = DesiredSpeed
+    end
+    if JumpEnabled then
+        local humanoid = character:WaitForChild("Humanoid")
+        humanoid.JumpPower = DesiredJump
+    end
+end)
+
+-- Funzioni di utility per UI
+local UI = {}
+
+-- Crea un effetto ripple quando si clicca un bottone
+function UI.CreateRipple(button)
+    button.ClipsDescendants = true
+    button.AutoButtonColor = false
+    
+    button.MouseButton1Down:Connect(function(x, y)
+        local ripple = Instance.new("Frame")
+        ripple.Name = "RippleEffect"
+        ripple.Parent = button
+        ripple.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        ripple.BackgroundTransparency = 0.7
+        ripple.BorderSizePixel = 0
+        ripple.ZIndex = button.ZIndex + 1
+        
+        local corner = Instance.new("UICorner", ripple)
+        corner.CornerRadius = UDim.new(1, 0)
+        
+        local buttonAbsolutePosition = button.AbsolutePosition
+        local buttonAbsoluteSize = button.AbsoluteSize
+        
+        ripple.Position = UDim2.new(0, x - buttonAbsolutePosition.X, 0, y - buttonAbsolutePosition.Y)
+        ripple.Size = UDim2.new(0, 0, 0, 0)
+        
+        local maxSize = math.max(buttonAbsoluteSize.X, buttonAbsoluteSize.Y) * 2
+        
+        ripple:TweenSize(
+            UDim2.new(0, maxSize, 0, maxSize),
+            Enum.EasingDirection.Out,
+            Enum.EasingStyle.Quad,
+            0.5,
+            false,
+            function()
+                ripple:TweenSizeAndPosition(
+                    UDim2.new(0, maxSize, 0, maxSize),
+                    UDim2.new(0.5, -maxSize/2, 0.5, -maxSize/2),
+                    Enum.EasingDirection.Out,
+                    Enum.EasingStyle.Quad,
+                    0.5,
+                    false,
+                    function()
+                        ripple:TweenProperty("BackgroundTransparency", 1, Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.3, false, function()
+                            ripple:Destroy()
+                        end)
+                    end
+                )
+            end
+        )
+    end)
+end
+
+-- Crea un bottone moderno
+function UI.CreateButton(parent, text, position, size, color, textColor)
+    local button = Instance.new("TextButton", parent)
+    button.Size = size or UDim2.new(1, -40, 0, 45)
+    button.Position = position or UDim2.new(0, 20, 0, 60)
+    button.Text = text or "Button"
+    button.TextColor3 = textColor or Theme.TextPrimary
+    button.BackgroundColor3 = color or Theme.Secondary
+    button.Font = Enum.Font.GothamSemibold
+    button.TextSize = 16
+    button.ZIndex = 2
+    button.BorderSizePixel = 0
+    
+    local corner = Instance.new("UICorner", button)
+    corner.CornerRadius = UDim.new(0, 8)
+    
+    local stroke = Instance.new("UIStroke", button)
+    stroke.Color = Color3.fromRGB(80, 80, 80)
+    stroke.Transparency = 0.5
+    stroke.Thickness = 1
+    
+    UI.CreateRipple(button)
+    
+    local defaultColor = button.BackgroundColor3
+    local hoverColor = defaultColor:Lerp(Color3.new(1, 1, 1), 0.1)
+    
+    button.MouseEnter:Connect(function()
+        button:TweenProperty("BackgroundColor3", hoverColor, Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+    end)
+    
+    button.MouseLeave:Connect(function()
+        button:TweenProperty("BackgroundColor3", defaultColor, Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+    end)
+    
+    return button
+end
+
+-- Crea uno slider
+function UI.CreateSlider(parent, title, min, max, default, position)
+    local container = Instance.new("Frame", parent)
+    container.Name = title .. "SliderContainer"
+    container.Size = UDim2.new(1, -40, 0, 65)
+    container.Position = position or UDim2.new(0, 20, 0, 220)
+    container.BackgroundTransparency = 1
+    container.BorderSizePixel = 0
+    
+    local titleLabel = Instance.new("TextLabel", container)
+    titleLabel.Size = UDim2.new(1, 0, 0, 20)
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.Text = title
+    titleLabel.TextColor3 = Theme.TextPrimary
+    titleLabel.Font = Enum.Font.GothamMedium
+    titleLabel.TextSize = 14
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.BorderSizePixel = 0
+    
+    local valueLabel = Instance.new("TextLabel", container)
+    valueLabel.Size = UDim2.new(0, 50, 0, 20)
+    valueLabel.Position = UDim2.new(1, -50, 0, 0)
+    valueLabel.Text = tostring(default)
+    valueLabel.TextColor3 = Theme.Accent
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextSize = 14
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.BorderSizePixel = 0
+    
+    local sliderBack = Instance.new("Frame", container)
+    sliderBack.Name = "SliderBackground"
+    sliderBack.Size = UDim2.new(1, 0, 0, 6)
+    sliderBack.Position = UDim2.new(0, 0, 0, 30)
+    sliderBack.BackgroundColor3 = Theme.Secondary
+    sliderBack.BorderSizePixel = 0
+    
+    local sliderBackCorner = Instance.new("UICorner", sliderBack)
+    sliderBackCorner.CornerRadius = UDim.new(1, 0)
+    
+    local sliderFill = Instance.new("Frame", sliderBack)
+    sliderFill.Name = "SliderFill"
+    sliderFill.BackgroundColor3 = Theme.Accent
+    local fillPercent = (default - min) / (max - min)
+    sliderFill.Size = UDim2.new(fillPercent, 0, 1, 0)
+    sliderFill.BorderSizePixel = 0
+    
+    local sliderFillCorner = Instance.new("UICorner", sliderFill)
+    sliderFillCorner.CornerRadius = UDim.new(1, 0)
+    
+    local sliderKnob = Instance.new("Frame", sliderFill)
+    sliderKnob.Name = "SliderKnob"
+    sliderKnob.Size = UDim2.new(0, 16, 0, 16)
+    sliderKnob.Position = UDim2.new(1, -8, 0.5, -8)
+    sliderKnob.BackgroundColor3 = Theme.TextPrimary
+    sliderKnob.ZIndex = 2
+    sliderKnob.BorderSizePixel = 0
+    
+    local sliderKnobCorner = Instance.new("UICorner", sliderKnob)
+    sliderKnobCorner.CornerRadius = UDim.new(1, 0)
+    
+    local sliderKnobStroke = Instance.new("UIStroke", sliderKnob)
+    sliderKnobStroke.Color = Theme.Secondary
+    sliderKnobStroke.Thickness = 1
+    
+    -- Input box per valore preciso
+    local valueInput = Instance.new("TextBox", container)
+    valueInput.Size = UDim2.new(0, 60, 0, 26)
+    valueInput.Position = UDim2.new(1, -60, 0, 39)
+    valueInput.Text = tostring(default)
+    valueInput.TextColor3 = Theme.TextPrimary
+    valueInput.BackgroundColor3 = Theme.Secondary
+    valueInput.Font = Enum.Font.Gotham
+    valueInput.TextSize = 14
+    valueInput.TextWrapped = true
+    valueInput.ClipsDescendants = true
+    valueInput.BorderSizePixel = 0
+    
+    local valueInputCorner = Instance.new("UICorner", valueInput)
+    valueInputCorner.CornerRadius = UDim.new(0, 6)
+    
+    local valueInputStroke = Instance.new("UIStroke", valueInput)
+    valueInputStroke.Color = Color3.fromRGB(80, 80, 80)
+    valueInputStroke.Transparency = 0.6
+    valueInputStroke.Thickness = 1
+    
+    -- Funzionalità dello slider
+    local value = default
+    local dragging = false
+    
+    local function updateValue(newValue)
+        value = math.clamp(newValue, min, max)
+        local percent = (value - min) / (max - min)
+        sliderFill.Size = UDim2.new(percent, 0, 1, 0)
+        valueLabel.Text = tostring(math.floor(value))
+        valueInput.Text = tostring(math.floor(value))
+        return value
+    end
+    
+    sliderBack.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            local percent = math.clamp((input.Position.X - sliderBack.AbsolutePosition.X) / sliderBack.AbsoluteSize.X, 0, 1)
+            local newValue = min + (max - min) * percent
+            updateValue(newValue)
+        end
+    end)
+    
+    sliderBack.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    game:GetService("UserInputService").InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local percent = math.clamp((input.Position.X - sliderBack.AbsolutePosition.X) / sliderBack.AbsoluteSize.X, 0, 1)
+            local newValue = min + (max - min) * percent
+            updateValue(newValue)
+        end
+    end)
+    
+    valueInput.FocusLost:Connect(function(enterPressed)
+        local inputValue = tonumber(valueInput.Text)
+        if inputValue then
+            updateValue(inputValue)
+        else
+            valueInput.Text = tostring(math.floor(value))
+        end
+    end)
+    
+    -- API dello slider
+    local slider = {}
+    slider.container = container
+    
+    function slider:GetValue()
+        return value
+    end
+    
+    function slider:SetValue(newValue)
+        return updateValue(newValue)
+    end
+    
+    function slider:Connect(callback)
+        valueInput:GetPropertyChangedSignal("Text"):Connect(function()
+            callback(value)
+        end)
+        return self
+    end
+    
+    return slider
+end
+
+-- Crea un tab per il TabSystem
+function UI.CreateTab(tabContainer, contentContainer, name, icon)
+    local tab = Instance.new("TextButton", tabContainer)
+    tab.Name = name .. "Tab"
+    tab.BackgroundColor3 = Theme.Secondary
+    tab.BackgroundTransparency = 0.9
+    tab.Size = UDim2.new(1, 0, 0, 40)
+    tab.Font = Enum.Font.GothamMedium
+    tab.Text = "  " .. name
+    tab.TextColor3 = Theme.TextSecondary
+    tab.TextSize = 14
+    tab.TextXAlignment = Enum.TextXAlignment.Left
+    tab.AutoButtonColor = false
+    tab.BorderSizePixel = 0
+    
+    local iconLabel = Instance.new("ImageLabel", tab)
+    iconLabel.Size = UDim2.new(0, 18, 0, 18)
+    iconLabel.Position = UDim2.new(0, 10, 0.5, -9)
+    iconLabel.BackgroundTransparency = 1
+    iconLabel.Image = icon or "rbxassetid://3926305904"
+    iconLabel.ImageRectOffset = Vector2.new(924, 364)
+    iconLabel.ImageRectSize = Vector2.new(36, 36)
+    iconLabel.ImageColor3 = Theme.TextSecondary
+    iconLabel.BorderSizePixel = 0
+    
+    local highlight = Instance.new("Frame", tab)
+    highlight.Name = "Highlight"
+    highlight.Size = UDim2.new(0, 3, 1, -14)
+    highlight.Position = UDim2.new(0, 0, 0, 7)
+    highlight.BackgroundColor3 = Theme.Accent
+    highlight.Transparency = 1
+    highlight.ZIndex = 2
+    highlight.BorderSizePixel = 0
+    
+    local corner = Instance.new("UICorner", highlight)
+    corner.CornerRadius = UDim.new(0, 2)
+    
+    -- Contenuto del tab
+    local content = Instance.new("ScrollingFrame", contentContainer)
+    content.Name = name .. "Content"
+    content.Size = UDim2.new(1, 0, 1, 0)
+    content.BackgroundTransparency = 1
+    content.BorderSizePixel = 0
+    content.ScrollBarThickness = 4
+    content.ScrollBarImageColor3 = Theme.Accent
+    content.Visible = false
+    content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    content.CanvasSize = UDim2.new(0, 0, 0, 0)
+    
+    local contentPadding = Instance.new("UIPadding", content)
+    contentPadding.PaddingTop = UDim.new(0, 15)
+    contentPadding.PaddingBottom = UDim.new(0, 15)
+    
+    local contentList = Instance.new("UIListLayout", content)
+    contentList.SortOrder = Enum.SortOrder.LayoutOrder
+    contentList.Padding = UDim.new(0, 10)
+    
+    return tab, content
+end
+
+-- Funzione per creare un toggle switch
+function UI.CreateToggle(parent, text, defaultState, position)
+    local container = Instance.new("Frame", parent)
+    container.Name = text .. "ToggleContainer"
+    container.Size = UDim2.new(1, -40, 0, 40)
+    container.Position = position or UDim2.new(0, 20, 0, 0)
+    container.BackgroundTransparency = 1
+    container.BorderSizePixel = 0
+    
+    local titleLabel = Instance.new("TextLabel", container)
+    titleLabel.Size = UDim2.new(1, -60, 1, 0)
+    titleLabel.Position = UDim2.new(0, 0, 0, 0)
+    titleLabel.Text = text
+    titleLabel.TextColor3 = Theme.TextPrimary
+    titleLabel.Font = Enum.Font.GothamMedium
+    titleLabel.TextSize = 14
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.BorderSizePixel = 0
+    
+    local toggleButton = Instance.new("TextButton", container)
+    toggleButton.Size = UDim2.new(0, 50, 0, 26)
+    toggleButton.Position = UDim2.new(1, -50, 0.5, -13)
+    toggleButton.Text = ""
+    toggleButton.BackgroundColor3 = defaultState and Theme.Accent3 or Theme.Secondary
+    toggleButton.BorderSizePixel = 0
+    
+    local toggleCorner = Instance.new("UICorner", toggleButton)
+    toggleCorner.CornerRadius = UDim.new(1, 0)
+    
+    local toggleCircle = Instance.new("Frame", toggleButton)
+    toggleCircle.Size = UDim2.new(0, 20, 0, 20)
+    toggleCircle.Position = UDim2.new(defaultState and 0.6 or 0, defaultState and -10 or 3, 0.5, -10)
+    toggleCircle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    toggleCircle.BorderSizePixel = 0
+    
+    local circleCorner = Instance.new("UICorner", toggleCircle)
+    circleCorner.CornerRadius = UDim.new(1, 0)
+    
+    local toggleState = defaultState
+    
+    toggleButton.MouseButton1Click:Connect(function()
+        toggleState = not toggleState
+        
+        if toggleState then
+            toggleButton.BackgroundColor3 = Theme.Accent3
+            toggleCircle:TweenPosition(UDim2.new(0.6, -10, 0.5, -10), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+        else
+            toggleButton.BackgroundColor3 = Theme.Secondary
+            toggleCircle:TweenPosition(UDim2.new(0, 3, 0.5, -10), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.2, true)
+        end
+    end)
+    
+    -- API del toggle
+    local toggle = {}
+    toggle.container = container
+    
+    function toggle:GetValue()
+        return toggleState
+    end
+    
+    function toggle:SetValue(newState)
+        toggleState = newState
+        if toggleState then
+            toggleButton.BackgroundColor3 = Theme.Accent3
+            toggleCircle.Position = UDim2.new(0.6, -10, 0.5, -10)
+        else
+            toggleButton.BackgroundColor3 = Theme.Secondary
+            toggleCircle.Position = UDim2.new(0, 3, 0.5, -10)
+        end
+        return toggleState
+    end
+    
+    function toggle:Connect(callback)
+        toggleButton.MouseButton1Click:Connect(function()
+            callback(toggleState)
+        end)
+        return self
+    end
+    
+    return toggle
+end
+
+-- Funzione per creare una sezione
+function UI.CreateSection(parent, title)
+    local section = Instance.new("Frame", parent)
+    section.Name = title .. "Section"
+    section.Size = UDim2.new(1, -30, 0, 30)
+    section.BackgroundTransparency = 1
+    section.LayoutOrder = #parent:GetChildren()
+    section.BorderSizePixel = 0
+    
+    local titleLabel = Instance.new("TextLabel", section)
+    titleLabel.Size = UDim2.new(1, 0, 0, 20)
+    titleLabel.Position = UDim2.new(0, 10, 0, 5)
+    titleLabel.Text = title
+    titleLabel.TextColor3 = Theme.Accent
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 14
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.BorderSizePixel = 0
+    
+    local underline = Instance.new("Frame", section)
+    underline.Size = UDim2.new(1, -20, 0, 1)
+    underline.Position = UDim2.new(0, 10, 0, 25)
+    underline.BackgroundColor3 = Theme.Accent
+    underline.BackgroundTransparency = 0.7
+    underline.BorderSizePixel = 0
+    
+    return section
+end
+
+-- Crea una notifica toast
+function UI.CreateNotification(title, message, duration, type)
+    -- Rimuovi vecchie notifiche
+    for _, notification in pairs(player:WaitForChild("PlayerGui"):GetChildren()) do
+        if notification.Name == "Notification" then
+            notification:Destroy()
+        end
+    end
+    
+    local notificationGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+    notificationGui.Name = "Notification"
+    notificationGui.ResetOnSpawn = false
+    notificationGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    local notifFrame = Instance.new("Frame", notificationGui)
+    notifFrame.Size = UDim2.new(0, 300, 0, 80)
+    notifFrame.Position = UDim2.new(1, 10, 0.8, 0)
+    notifFrame.BackgroundColor3 = Theme.Primary
+    notifFrame.BorderSizePixel = 0
+    
+    local notifCorner = Instance.new("UICorner", notifFrame)
+    notifCorner.CornerRadius = UDim.new(0, 8)
+    
+    local notifStroke = Instance.new("UIStroke", notifFrame)
+    notifStroke.Color = type == "error" and Theme.Danger or type == "success" and Theme.Accent3 or Theme.Accent
+    notifStroke.Thickness = 1
+    
+    local titleLabel = Instance.new("TextLabel", notifFrame)
+    titleLabel.Size = UDim2.new(1, -20, 0, 30)
+    titleLabel.Position = UDim2.new(0, 10, 0, 5)
+    titleLabel.Text = title
+    titleLabel.TextColor3 = type == "error" and Theme.Danger or type == "success" and Theme.Accent3 or Theme.Accent
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 16
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.BorderSizePixel = 0
+    
+    local messageLabel = Instance.new("TextLabel", notifFrame)
+    messageLabel.Size = UDim2.new(1, -20, 0, 40)
+    messageLabel.Position = UDim2.new(0, 10, 0, 35)
+    messageLabel.Text = message
+    messageLabel.TextColor3 = Theme.TextPrimary
+    messageLabel.Font = Enum.Font.Gotham
+    messageLabel.TextSize = 14
+    messageLabel.BackgroundTransparency = 1
+    messageLabel.TextXAlignment = Enum.TextXAlignment.Left
+    messageLabel.TextWrapped = true
+    messageLabel.BorderSizePixel = 0
+    
+    -- Animazione di entrata
+    notifFrame:TweenPosition(UDim2.new(1, -320, 0.8, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.5, false)
+    
+    -- Timer e animazione di uscita
+    task.delay(duration or 3, function()
+        if notifFrame and notifFrame.Parent then
+            notifFrame:TweenPosition(UDim2.new(1, 10, 0.8, 0), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.5, false, function()
+                notificationGui:Destroy()
+            end)
+        end
+    end)
+    
+    return notificationGui
+end
+
+-- Funzione per il sistema ESP
+function CreateESP()
+    local espFolder = Instance.new("Folder", game:GetService("CoreGui"))
+    espFolder.Name = "ESP_FOLDER"
+    
+    local function createBox(player)
+        if player == game.Players.LocalPlayer then return end
+        
+        local character = player.Character
+        if not character then return end
+        
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        local head = character:FindFirstChild("Head")
+        
+        if not humanoidRootPart or not head then return end
+        
+        local box = Instance.new("BoxHandleAdornment")
+        box.Name = player.Name
+        box.Adornee = humanoidRootPart
+        box.AlwaysOnTop = true
+        box.ZIndex = 10
+        box.Size = humanoidRootPart.Size + Vector3.new(0.1, 0.1, 0.1)
+        box.Transparency = 0.7
+        box.Color3 = player.TeamColor.Color
+        box.Parent = espFolder
+        
+        local billboardGui = Instance.new("BillboardGui")
+        billboardGui.Name = player.Name .. "_ESP"
+        billboardGui.AlwaysOnTop = true
+        billboardGui.Size = UDim2.new(0, 200, 0, 50)
+        billboardGui.StudsOffset = Vector3.new(0, 2, 0)
+        billboardGui.Parent = espFolder
+        billboardGui.Adornee = head
+        
+        local nameLabel = Instance.new("TextLabel", billboardGui)
+        nameLabel.BackgroundTransparency = 1
+        nameLabel.Size = UDim2.new(1, 0, 1, 0)
+        nameLabel.Text = player.Name
+        nameLabel.TextColor3 = player.TeamColor.Color
+        nameLabel.TextSize = 16
+        nameLabel.Font = Enum.Font.GothamBold
+        nameLabel.TextStrokeTransparency = 0.5
+        nameLabel.BorderSizePixel = 0
+        
+        return box, billboardGui
+    end
+    
+    local function refreshESP()
+        for _, child in pairs(espFolder:GetChildren()) do
+            child:Destroy()
+        end
+        
+        if not ESPEnabled then return end
+        
+        for _, player in pairs(game:GetService("Players"):GetPlayers()) do
+            if player ~= game.Players.LocalPlayer then
+                task.spawn(function()
+                    createBox(player)
+                end)
+            end
+        end
+    end
+    
+    -- Aggiorna ESP quando i giocatori entrano/escono
+    game:GetService("Players").PlayerAdded:Connect(function(player)
+        if ESPEnabled then
+            createBox(player)
+        end
+    end)
+    
+    game:GetService("Players").PlayerRemoving:Connect(function(player)
+        local boxPart = espFolder:FindFirstChild(player.Name)
+        local billboardPart = espFolder:FindFirstChild(player.Name .. "_ESP")
+        
+        if boxPart then boxPart:Destroy() end
+        if billboardPart then billboardPart:Destroy() end
+    end)
+    
+    return refreshESP
+end
+
+-- NoClip Function
+local RefreshNoClip
+
+function EnableNoClip()
+    if RefreshNoClip then return end
+    
+    RefreshNoClip = game:GetService("RunService").Stepped:Connect(function()
+        if not NoClipEnabled or not character then
+            if RefreshNoClip then
+                RefreshNoClip:Disconnect()
+                RefreshNoClip = nil
+            end
+            return
+        end
+        
+        for _, part in pairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end)
+end
+
+-- Funzione per creare il Key System
+local function CreateKeySystem()
+    -- GUI base del KeySystem
+    local keyGui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+    keyGui.Name = "KeySystemUI"
+    keyGui.ResetOnSpawn = false
+    keyGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Blur effect
+    local blur = Instance.new("BlurEffect", game:GetService("Lighting"))
+    blur.Size = 0
+    for i = 1, 10 do
+        blur.Size = i * 2
+        task.wait(0.02)
+    end
+    
+    -- Contenitore principale
+    local keyFrame = Instance.new("Frame", keyGui)
+    keyFrame.Size = UDim2.new(0, 320, 0, 200)
+    keyFrame.Position = UDim2.new(0.5, -160, 0.5, -100)
+    keyFrame.BackgroundColor3 = Theme.Primary
+    keyFrame.BackgroundTransparency = 0
+    keyFrame.BorderSizePixel = 0
+    keyFrame.ClipsDescendants = true
+    
+    -- UI Cornice & Gradient
+    Instance.new("UICorner", keyFrame).CornerRadius = UDim.new(0, 12)
+    local gradient = Instance.new("UIGradient", keyFrame)
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(35,35,38)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(25,25,28))
+    }
+    gradient.Rotation = 45
+    
+    -- Shadow
+    local shadow = Instance.new("ImageLabel", keyFrame)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://1316045217"
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    shadow.Size = UDim2.new(1, 30, 1, 30)
+    shadow.Position = UDim2.new(0, -15, 0, -15)
+    shadow.ImageTransparency = 0.7
+    shadow.ZIndex = 0
+    
+    -- Titolo
+    local logoContainer = Instance.new("Frame", keyFrame)
+    logoContainer.Size = UDim2.new(1, 0, 0, 50)
+    logoContainer.Position = UDim2.new(0, 0, 0, 10)
+    logoContainer.BackgroundTransparency = 1
+    logoContainer.BorderSizePixel = 0
+    
+    local logoText = Instance.new("TextLabel", logoContainer)
+    logoText.Size = UDim2.new(1, 0, 1, 0)
+    logoText.Text = "G-HUB PRO"
+    logoText.TextColor3 = Theme.Accent
+    logoText.Font = Enum.Font.GothamBold
+    logoText.TextSize = 24
+    logoText.BackgroundTransparency = 1
+    logoText.BorderSizePixel = 0
+    
+    -- Sottotitolo
+    local subtitle = Instance.new("TextLabel", keyFrame)
+    subtitle.Size = UDim2.new(1, -40, 0, 20)
+    subtitle.Position = UDim2.new(0, 20, 0, 50)
+    subtitle.Text = "Inserisci la tua key per accedere"
+    subtitle.TextColor3 = Theme.TextSecondary
+    subtitle.Font = Enum.Font.Gotham
+    subtitle.TextSize = 14
+    subtitle.BackgroundTransparency = 1
+    subtitle.TextXAlignment = Enum.TextXAlignment.Center
+    subtitle.BorderSizePixel = 0
+    
+    -- Key Input
+    local keyInputFrame = Instance.new("Frame", keyFrame)
+    keyInputFrame.Size = UDim2.new(1, -40, 0, 40)
+    keyInputFrame.Position = UDim2.new(0, 20, 0, 80)
+    keyInputFrame.BackgroundColor3 = Theme.Secondary
+    keyInputFrame.BackgroundTransparency = 0.5
+    keyInputFrame.BorderSizePixel = 0
+    
+    local keyInputCorner = Instance.new("UICorner", keyInputFrame)
+    keyInputCorner.CornerRadius = UDim.new(0, 8)
+    
+    local keyInputStroke = Instance.new("UIStroke", keyInputFrame)
+    keyInputStroke.Color = Theme.Accent
+    keyInputStroke.Thickness = 1
+    keyInputStroke.Transparency = 0.8
+    
+    local keyIcon = Instance.new("ImageLabel", keyInputFrame)
+    keyIcon.Size = UDim2.new(0, 20, 0, 20)
+    keyIcon.Position = UDim2.new(0, 10, 0.5, -10)
+    keyIcon.BackgroundTransparency = 1
+    keyIcon.Image = "rbxassetid://3926307971"
+    keyIcon.ImageRectOffset = Vector2.new(564, 284)
+    keyIcon.ImageRectSize = Vector2.new(36, 36)
+    keyIcon.ImageColor3 = Theme.TextSecondary
+    keyIcon.BorderSizePixel = 0
+    
+    local keyInput = Instance.new("TextBox", keyInputFrame)
+    keyInput.Size = UDim2.new(1, -50, 1, 0)
+    keyInput.Position = UDim2.new(0, 40, 0, 0)
+    keyInput.Text = ""
+    keyInput.PlaceholderText = "Inserisci la key..."
+    keyInput.TextColor3 = Theme.TextPrimary
+    keyInput.PlaceholderColor3 = Theme.TextSecondary
+    keyInput.BackgroundTransparency = 1
+    keyInput.Font = Enum.Font.Gotham
+    keyInput.TextSize = 16
+    keyInput.ClearTextOnFocus = false
+    keyInput.BorderSizePixel = 0
+    
+    -- Status Label
+    local statusLabel = Instance.new("TextLabel", keyFrame)
+    statusLabel.Size = UDim2.new(1, -40, 0, 20)
+    statusLabel.Position = UDim2.new(0, 20, 0, 130)
+    statusLabel.Text = "Richiesta attivazione..."
+    statusLabel.TextColor3 = Theme.TextSecondary
+    statusLabel.Font = Enum.Font.Gotham
+    statusLabel.TextSize = 12
+    statusLabel.BackgroundTransparency = 1
+    statusLabel.TextXAlignment = Enum.TextXAlignment.Center
+    statusLabel.BorderSizePixel = 0
+    
+    -- Submit Button
+    local submitBtn = Instance.new("TextButton", keyFrame)
+    submitBtn.Size = UDim2.new(1, -40, 0, 40)
+    submitBtn.Position = UDim2.new(0, 20, 0, 150)
+    submitBtn.Text = "VERIFICA"
+    submitBtn.TextColor3 = Theme.TextPrimary
+    submitBtn.BackgroundColor3 = Theme.Accent
+    submitBtn.Font = Enum.Font.GothamBold
+    submitBtn.TextSize = 16
+    submitBtn.BorderSizePixel = 0
+    
+    local submitBtnCorner = Instance.new("UICorner", submitBtn)
+    submitBtnCorner.CornerRadius = UDim.new(0, 8)
+    
+    UI.CreateRipple(submitBtn)
+    
+    -- Animation in
+    keyFrame.Position = keyFrame.Position + UDim2.new(0, 0, 0, 50)
+    keyFrame:TweenPosition(UDim2.new(0.5, -160, 0.5, -100), Enum.EasingDirection.Out, Enum.EasingStyle.Back, 0.5, false)
+    
+    -- Funzioni del KeySystem
+    local function verifyKey()
+        local inputText = keyInput.Text
+        
+        if inputText == CorrectKey then
+            statusLabel.Text = "✓ Key corretta! Avvio in corso..."
+            statusLabel.TextColor3 = Theme.Accent3
+            submitBtn.BackgroundColor3 = Theme.Accent3
+            submitBtn.Text = "AVVIO..."
+            
+            -- Animazione di successo
+            for i = 1, 5 do
+                submitBtn.Rotation = 2
+                task.wait(0.05)
+                submitBtn.Rotation = -2
+                task.wait(0.05)
+            end
+            submitBtn.Rotation = 0
+            
+            -- Chiudi il keysystem
+            task.wait(1)
+            keyFrame:TweenPosition(keyFrame.Position + UDim2.new(0, 0, 0, 50), Enum.EasingDirection.In, Enum.EasingStyle.Quad, 0.4, false)
+            
+            for i = 10, 1, -1 do
+                blur.Size = i * 2
+                task.wait(0.02)
+            end
+            blur:Destroy()
+            keyGui:Destroy()
+            
+            -- Avvia il menu principale
+            KeyVerified = true
+            UI.CreateNotification("G-Hub Pro", "Script avviato con successo!", 3, "success")
+            CreateMainGUI()
+        else
+            statusLabel.Text = "✗ Key errata! Riprova."
+            statusLabel.TextColor3 = Theme.Danger
+            
+            -- Animazione di errore
+            keyInput.Text = ""
+            for i = 1, 3 do
+                submitBtn.Position = submitBtn.Position + UDim2.new(0, 5, 0, 0)
+                task.wait(0.05)
+                submitBtn.Position = submitBtn.Position - UDim2.new(0, 10, 0, 0)
+                task.wait(0.05)
+                submitBtn.Position = submitBtn.Position + UDim2.new(0, 5, 0, 0)
+            end
+        end
+    end
+    
+    submitBtn.MouseButton1Click:Connect(verifyKey)
+    keyInput.FocusLost:Connect(function(enterPressed)
+        if enterPressed then verifyKey() end
+    end)
+end
+
+-- Funzione per creare la GUI principale
+function CreateMainGUI()
+    if not KeyVerified then return end
+    
+    -- Inizializza ESP
+    local refreshESP = CreateESP()
+    
+    -- GUI base
+    local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+    gui.Name = "GHubProUI"
+    gui.ResetOnSpawn = false
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    -- Contenitore principale (più grande)
+    local mainFrame = Instance.new("Frame", gui)
+    mainFrame.Size = UDim2.new(0, 500, 0, 400) -- Dimensioni aumentate
+    mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
+    mainFrame.BackgroundColor3 = Theme.Primary
+    mainFrame.BackgroundTransparency = 0.1
+    mainFrame.BorderSizePixel = 0
+    mainFrame.ClipsDescendants = true
+    mainFrame.Active = true
+    mainFrame.Draggable = true
+    
+    -- UI Cornice & Gradient
+    Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0, 10)
+    local gradient = Instance.new("UIGradient", mainFrame)
+    gradient.Color = ColorSequence.new{
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(35,35,38)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(25,25,28))
+    }
+    gradient.Rotation = 45
+    
+    -- Shadow
+    local shadow = Instance.new("ImageLabel", mainFrame)
+    shadow.BackgroundTransparency = 1
+    shadow.Image = "rbxassetid://1316045217"
+    shadow.ScaleType = Enum.ScaleType.Slice
+    shadow.SliceCenter = Rect.new(10, 10, 118, 118)
+    shadow.Size = UDim2.new(1, 30, 1, 30)
+    shadow.Position = UDim2.new(0, -15, 0, -15)
+    shadow.ImageTransparency = 0.7
+    shadow.ZIndex = 0
+    
+    -- Header
+    local header = Instance.new("Frame", mainFrame)
+    header.Size = UDim2.new(1, 0, 0, 40)
+    header.BackgroundColor3 = Theme.Primary
+    header.BackgroundTransparency = 0.5
+    header.BorderSizePixel = 0
+    
+    local headerCorner = Instance.new("UICorner", header)
+    headerCorner.CornerRadius = UDim.new(0, 10)
+    
+    local headerFix = Instance.new("Frame", header)
+    headerFix.Size = UDim2.new(1, 0, 0.5, 0)
+    headerFix.Position = UDim2.new(0, 0, 0.5, 0)
+    headerFix.BackgroundColor3 = header.BackgroundColor3
+    headerFix.BackgroundTransparency = header.BackgroundTransparency
+    headerFix.BorderSizePixel = 0
+    
+    -- Titolo
+    local title = Instance.new("TextLabel", header)
+    title.Size = UDim2.new(1, -40, 1, 0)
+    title.Position = UDim2.new(0, 15, 0, 0)
+    title.Text = "G-HUB PRO"
+    title.TextColor3 = Theme.Accent
+    title.Font = Enum.Font.GothamBold
+    title.TextSize = 18
+    title.BackgroundTransparency = 1
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.BorderSizePixel = 0
+    
+    -- Versione
+    local version = Instance.new("TextLabel", header)
+    version.Size = UDim2.new(0, 50, 1, 0)
+    version.Position = UDim2.new(1, -120, 0, 0)
+    version.Text = "v2.0"
+    version.TextColor3 = Theme.TextSecondary
+    version.Font = Enum.Font.GothamMedium
+    version.TextSize = 14
+    version.BackgroundTransparency = 1
+    version.BorderSizePixel = 0
+    
+    -- X Button
+    local closeBtn = Instance.new("TextButton", header)
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -40, 0.5, -15)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Theme.TextPrimary
+    closeBtn.BackgroundColor3 = Theme.Secondary
+    closeBtn.BackgroundTransparency = 0.5
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.BorderSizePixel = 0
+    
+    local closeBtnCorner = Instance.new("UICorner", closeBtn)
+    closeBtnCorner.CornerRadius = UDim.new(0, 8)
+    
+    -- Minimize Button
+    local minimizeBtn = Instance.new("TextButton", header)
+    minimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    minimizeBtn.Position = UDim2.new(1, -80, 0.5, -15)
+    minimizeBtn.Text = "−"
+    minimizeBtn.TextColor3 = Theme.TextPrimary
+    minimizeBtn.BackgroundColor3 = Theme.Secondary
+    minimizeBtn.BackgroundTransparency = 0.5
+    minimizeBtn.Font = Enum.Font.GothamBold
+    minimizeBtn.TextSize = 18
+    minimizeBtn.BorderSizePixel = 0
+    
+    local minimizeBtnCorner = Instance.new("UICorner", minimizeBtn)
+    minimizeBtnCorner.CornerRadius = UDim.new(0, 8)
+    
+    -- Container principale
+    local container = Instance.new("Frame", mainFrame)
+    container.Size = UDim2.new(1, 0, 1, -50)
+    container.Position = UDim2.new(0, 0, 0, 50)
+    container.BackgroundTransparency = 1
+    container.BorderSizePixel = 0
+    
+    -- Sidebar (più larga)
+    local sidebar = Instance.new("Frame", container)
+    sidebar.Size = UDim2.new(0, 140, 1, -10)
+    sidebar.Position = UDim2.new(0, 5, 0, 5)
+    sidebar.BackgroundColor3 = Theme.Secondary
+    sidebar.BackgroundTransparency = 0.8
+    sidebar.BorderSizePixel = 0
+    
+    local sidebarCorner = Instance.new("UICorner", sidebar)
+    sidebarCorner.CornerRadius = UDim.new(0, 8)
+    
+    local sidebarPadding = Instance.new("UIPadding", sidebar)
+    sidebarPadding.PaddingTop = UDim.new(0, 10)
+    
+    local sidebarList = Instance.new("UIListLayout", sidebar)
+    sidebarList.SortOrder = Enum.SortOrder.LayoutOrder
+    sidebarList.Padding = UDim.new(0, 5)
+    
+    -- Contenuto principale
+    local content = Instance.new("Frame", container)
+    content.Size = UDim2.new(1, -155, 1, -10)
+    content.Position = UDim2.new(0, 150, 0, 5)
+    content.BackgroundColor3 = Theme.Secondary
+    content.BackgroundTransparency = 0.8
+    content.BorderSizePixel = 0
+    
+    local contentCorner = Instance.new("UICorner", content)
+    contentCorner.CornerRadius = UDim.new(0, 8)
+    
+    -- Crea i tab
+    local mainTab, mainContent = UI.CreateTab(sidebar, content, "Home", "rbxassetid://3926305904")
+    local teleportTab, teleportContent = UI.CreateTab(sidebar, content, "Teleport", "rbxassetid://3926307971")
+    local playerTab, playerContent = UI.CreateTab(sidebar, content, "Player", "rbxassetid://3926307971")
+    local visualTab, visualContent = UI.CreateTab(sidebar, content, "Visual", "rbxassetid://3926305904")
+    local miscTab, miscContent = UI.CreateTab(sidebar, content, "Misc", "rbxassetid://3926307971")
+    
+    local tabs = {
+        {tab = mainTab, content = mainContent},
+        {tab = teleportTab, content = teleportContent},
+        {tab = playerTab, content = playerContent},
+        {tab = visualTab, content = visualContent},
+        {tab = miscTab, content = miscContent}
+    }
+    
+    -- Funzione per selezionare un tab
+    local function selectTab(selectedTab)
+        for _, tabInfo in ipairs(tabs) do
+            if tabInfo.tab == selectedTab then
+                tabInfo.tab.TextColor3 = Theme.Accent
+                tabInfo.tab.BackgroundTransparency = 0.7
+                tabInfo.tab:FindFirstChild("Highlight").Transparency = 0
+                tabInfo.content.Visible = true
+            else
+                tabInfo.tab.TextColor3 = Theme.TextSecondary
+                tabInfo.tab.BackgroundTransparency = 0.9
+                tabInfo.tab:FindFirstChild("Highlight").Transparency = 1
+                tabInfo.content.Visible = false
+            end
+        end
+    end
+    
+    for _, tabInfo in ipairs(tabs) do
+        tabInfo.tab.MouseButton1Click:Connect(function()
+            selectTab(tabInfo.tab)
+        end)
+    end
+    
+    -- Seleziona il tab principale all'avvio
+    selectTab(mainTab)
+    
+    -- Welcome Section (Home Tab)
+    local welcomeSection = UI.CreateSection(mainContent, "Benvenuto")
+    welcomeSection.Size = UDim2.new(1, -20, 0, 120)
+    
+    local welcomeMessage = Instance.new("TextLabel", welcomeSection)
+    welcomeMessage.Size = UDim2.new(1, -20, 0, 80)
+    welcomeMessage.Position = UDim2.new(0, 10, 0, 30)
+    welcomeMessage.Text = "Benvenuto in G-Hub Pro v2.0!\n\nQuesto script è stato completamente modernizzato con una nuova interfaccia e nuove funzionalità. Esplora i vari tab per scoprire tutte le opzioni disponibili."
+    welcomeMessage.TextColor3 = Theme.TextPrimary
+    welcomeMessage.Font = Enum.Font.Gotham
+    welcomeMessage.TextSize = 14
+    welcomeMessage.BackgroundTransparency = 1
+    welcomeMessage.TextXAlignment = Enum.TextXAlignment.Left
+    welcomeMessage.TextYAlignment = Enum.TextYAlignment.Top
+    welcomeMessage.TextWrapped = true
+    welcomeMessage.BorderSizePixel = 0
+    
+    -- Info section
+    local infoSection = UI.CreateSection(mainContent, "Informazioni")
+    infoSection.Size = UDim2.new(1, -20, 0, 100)
+    infoSection.Position = UDim2.new(0, 0, 0, 130)
+    
+    local infoText = Instance.new("TextLabel", infoSection)
+    infoText.Size = UDim2.new(1, -20, 0, 60)
+    infoText.Position = UDim2.new(0, 10, 0, 30)
+    infoText.Text = "Username: " .. player.Name .. "\nFPS: " .. math.floor(1/game:GetService("RunService").RenderStepped:Wait()) .. "\nPing: " .. math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
+    infoText.TextColor3 = Theme.TextPrimary
+    infoText.Font = Enum.Font.Gotham
+    infoText.TextSize = 14
+    infoText.BackgroundTransparency = 1
+    infoText.TextXAlignment = Enum.TextXAlignment.Left
+    infoText.TextYAlignment = Enum.TextYAlignment.Top
+    infoText.BorderSizePixel = 0
+    
+    -- Aggiorna FPS e Ping
+    game:GetService("RunService").RenderStepped:Connect(function()
+        if infoText and infoText.Parent then
+            infoText.Text = "Username: " .. player.Name .. 
+                           "\nFPS: " .. math.floor(1/game:GetService("RunService").RenderStepped:Wait()) .. 
+                           "\nPing: " .. math.floor(game:GetService("Stats").Network.ServerStatsItem["Data Ping"]:GetValue())
+        end
+    end)
+    
+    -- Credits
+    local creditsSection = UI.CreateSection(mainContent, "Crediti")
+    creditsSection.Size = UDim2.new(1, -20, 0, 80)
+    creditsSection.Position = UDim2.new(0, 0, 0, 240)
+    
+    local creditsText = Instance.new("TextLabel", creditsSection)
+    creditsText.Size = UDim2.new(1, -20, 0, 40)
+    creditsText.Position = UDim2.new(0, 10, 0, 30)
+    creditsText.Text = "Script creato da: glockieeh\nUI Modernizzata v2.0"
+    creditsText.TextColor3 = Theme.TextSecondary
+    creditsText.Font = Enum.Font.Gotham
+    creditsText.TextSize = 14
+    creditsText.BackgroundTransparency = 1
+    creditsText.TextXAlignment = Enum.TextXAlignment.Left
+    creditsText.TextYAlignment = Enum.TextYAlignment.Top
+    creditsText.BorderSizePixel = 0
+    
+    -- Teleport Tab
+    local teleportSection = UI.CreateSection(teleportContent, "Auto Teleport")
+    teleportSection.Size = UDim2.new(1, -20, 0, 30)
+    
+    local teleportToggle = UI.CreateToggle(teleportContent, "Auto Teleport alle Orbe", false)
+    teleportToggle.container.Position = UDim2.new(0, 20, 0, 40)
+    
+    local teleportDelaySection = UI.CreateSection(teleportContent, "Impostazioni")
+    teleportDelaySection.Position = UDim2.new(0, 0, 0, 90)
+    teleportDelaySection.Size = UDim2.new(1, -20, 0, 30)
+    
+    local teleportDelaySlider = UI.CreateSlider(teleportContent, "Ritardo Teleport (sec)", 0.1, 5, 0.4)
+    teleportDelaySlider.container.Position = UDim2.new(0, 20, 0, 130)
+    
+    -- Player Tab
+    local speedSection = UI.CreateSection(playerContent, "Velocità")
+    speedSection.Size = UDim2.new(1, -20, 0, 30)
+    
+    local speedToggle = UI.CreateToggle(playerContent, "Modifica Velocità", false)
+    speedToggle.container.Position = UDim2.new(0, 20, 0, 40)
+    
+    -- Slider velocità aumentato fino a 2000
+    local speedSlider = UI.CreateSlider(playerContent, "Velocità", 16, 2000, 16) -- Max 2000
+    speedSlider.container.Position = UDim2.new(0, 20, 0, 90)
+    
+    local jumpSection = UI.CreateSection(playerContent, "Salto")
+    jumpSection.Position = UDim2.new(0, 0, 0, 165)
+    jumpSection.Size = UDim2.new(1, -20, 0, 30)
+    
+    local jumpToggle = UI.CreateToggle(playerContent, "Modifica Salto", false)
+    jumpToggle.container.Position = UDim2.new(0, 20, 0, 205)
+    
+    local jumpSlider = UI.CreateSlider(playerContent, "Potenza Salto", 50, 250, 50)
+    jumpSlider.container.Position = UDim2.new(0, 20, 0, 255)
+    
+    -- Visual Tab
+    local espSection = UI.CreateSection(visualContent, "ESP")
+    espSection.Size = UDim2.new(1, -20, 0, 30)
+    
+    local espToggle = UI.CreateToggle(visualContent, "Player ESP", false)
+    espToggle.container.Position = UDim2.new(0, 20, 0, 40)
+    
+    -- Misc Tab
+    local miscSection = UI.CreateSection(miscContent, "Altre funzioni")
+    miscSection.Size = UDim2.new(1, -20, 0, 30)
+    
+    local noclipToggle = UI.CreateToggle(miscContent, "NoClip", false)
+    noclipToggle.container.Position = UDim2.new(0, 20, 0, 40)
+    
+    local autoRejoinButton = UI.CreateButton(miscContent, "Auto Rejoin", UDim2.new(0, 20, 0, 100))
+    autoRejoinButton.Size = UDim2.new(1, -40, 0, 40)
+    
+    -- Funzione Teletrasporto
+    local teleportDelay = 0.4
+    
+    local function teleportToOrbs()
+        if Teleporting then return end
+        Teleporting = true
+        
+        while TeleportEnabled and character do
+            local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+            if not humanoidRootPart then break end
+            
+            local spawnFolder = workspace:FindFirstChild("Game")
+                and workspace.Game:FindFirstChild("Orbs")
+                and workspace.Game.Orbs:FindFirstChild("Spawn")
+    
+            if spawnFolder then
+                for _, part in ipairs(spawnFolder:GetChildren()) do
+                    if part:IsA("Part") and TeleportEnabled and humanoidRootPart then
+                        humanoidRootPart.CFrame = part.CFrame
+                        task.wait()
+                    end
+                end
+            end
+    
+            task.wait(teleportDelay)
+        end
+        Teleporting = false
+    end
+    
+    -- Funzione Speed
+    local function applySpeed()
+        while SpeedEnabled and character do
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.WalkSpeed = DesiredSpeed
+            end
+            task.wait(0.2)
+        end
+    end
+    
+    -- Funzione Jump
+    local function applyJump()
+        while JumpEnabled and character do
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.JumpPower = DesiredJump
+            end
+            task.wait(0.2)
+        end
+    end
+    
+    -- Event Handlers
+    teleportToggle:Connect(function(value)
+        TeleportEnabled = value
+        if TeleportEnabled then
+            teleportToOrbs()
+            UI.CreateNotification("G-Hub Pro", "Auto Teleport attivato!", 2, "success")
+        else
+            UI.CreateNotification("G-Hub Pro", "Auto Teleport disattivato", 2)
+        end
+    end)
+    
+    teleportDelaySlider:Connect(function(value)
+        teleportDelay = value
+    end)
+    
+    speedToggle:Connect(function(value)
+        SpeedEnabled = value
+        if SpeedEnabled then
+            applySpeed()
+            UI.CreateNotification("G-Hub Pro", "Speed Hack attivato!", 2, "success")
+        else
+            local hum = character and character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = 16 end
+            UI.CreateNotification("G-Hub Pro", "Speed Hack disattivato", 2)
+        end
+    end)
+    
+    speedSlider:Connect(function(value)
+        DesiredSpeed = value
+        if SpeedEnabled then
+            local hum = character and character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed = DesiredSpeed end
+        end
+    end)
+    
+    jumpToggle:Connect(function(value)
+        JumpEnabled = value
+        if JumpEnabled then
+            applyJump()
+            UI.CreateNotification("G-Hub Pro", "Jump Hack attivato!", 2, "success")
+        else
+            local hum = character and character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.JumpPower = 50 end
+            UI.CreateNotification("G-Hub Pro", "Jump Hack disattivato", 2)
+        end
+    end)
+    
+    jumpSlider:Connect(function(value)
+        DesiredJump = value
+        if JumpEnabled then
+            local hum = character and character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.JumpPower = DesiredJump end
+        end
+    end)
+    
+    espToggle:Connect(function(value)
+        ESPEnabled = value
+        refreshESP()
+        if ESPEnabled then
+            UI.CreateNotification("G-Hub Pro", "ESP attivato!", 2, "success")
+        else
+            UI.CreateNotification("G-Hub Pro", "ESP disattivato", 2)
+        end
+    end)
+    
+    noclipToggle:Connect(function(value)
+        NoClipEnabled = value
+        if NoClipEnabled then
+            EnableNoClip()
+            UI.CreateNotification("G-Hub Pro", "NoClip attivato!", 2, "success")
+        else
+            UI.CreateNotification("G-Hub Pro", "NoClip disattivato", 2)
+        end
+    end)
+    
+    autoRejoinButton.MouseButton1Click:Connect(function()
+        UI.CreateNotification("G-Hub Pro", "Auto Rejoin attivato...", 2)
+        game:GetService("TeleportService"):Teleport(game.PlaceId, player)
+    end)
+    
+    -- Minimizza/Chiudi
+    local minimized = false
+    
+    minimizeBtn.MouseButton1Click:Connect(function()
+        minimized = not minimized
+        
+        if minimized then
+            container.Visible = false
+            mainFrame:TweenSize(UDim2.new(0, 500, 0, 50), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.3, true)
+            minimizeBtn.Text = "+"
+        else
+            mainFrame:TweenSize(UDim2.new(0, 500, 0, 400), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.3, true, function()
+                container.Visible = true
+            end)
+            minimizeBtn.Text = "−"
+        end
+    end)
+    
+    closeBtn.MouseButton1Click:Connect(function()
+        TeleportEnabled = false
+        SpeedEnabled = false
+        JumpEnabled = false
+        ESPEnabled = false
+        NoClipEnabled = false
+        
+        -- Ripristina i valori di default
+        local hum = character and character:FindFirstChildOfClass("Humanoid")
+        if hum then 
+            hum.WalkSpeed = 16 
+            hum.JumpPower = 50
+        end
+        
+        -- Animazione di chiusura
+        mainFrame:TweenSize(UDim2.new(0, 0, 0, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.5, true, function()
+            gui:Destroy()
+            for _, child in pairs(game:GetService("CoreGui"):GetChildren()) do
+                if child.Name == "ESP_FOLDER" then
+                    child:Destroy()
+                end
+            end
+        end)
+    end)
+    
+    -- Fade-in Animation
+    mainFrame.BackgroundTransparency = 1
+    mainFrame.Position = mainFrame.Position + UDim2.new(0, 0, 0, 50)
+    mainFrame:TweenPosition(UDim2.new(0.5, -250, 0.5, -200), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.5, false)
+    for i = 1, 10 do
+        mainFrame.BackgroundTransparency = 1 - (i / 10) * 0.9
+        task.wait(0.02)
+    end
+end
+
+-- Avvia il Key System
+CreateKeySystem()
